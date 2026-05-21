@@ -1,48 +1,35 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
 
-import { requireUserId } from "@/lib/auth";
+import { errToResponse } from "@/app/api/http";
+import { getUserId } from "@/features/auth/session";
+import { completePaymentAndReserve } from "@/features/payments/complete-payment";
+import { completePaymentSchema } from "@/features/payments/schemas";
 import { prisma } from "@/lib/db";
-import { completePaymentAndReserve } from "@/lib/reservations";
-
-const completePaymentSchema = z.object({
-  outcome: z.enum(["success", "failure"]),
-});
+import { err } from "@/lib/result";
 
 export async function POST(
   request: Request,
   { params }: { params: { paymentId: string } },
 ) {
-  const userId = await requireUserId();
-
+  const userId = await getUserId();
   if (!userId) {
-    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+    return errToResponse(err("unauthorized", "Authentication required."));
   }
 
-  const parsed = completePaymentSchema.safeParse(await request.json().catch(() => null));
-
+  const json = await request.json().catch(() => null);
+  const parsed = completePaymentSchema.safeParse(json);
   if (!parsed.success) {
-    return NextResponse.json({ error: "Invalid completion request." }, { status: 422 });
+    return errToResponse(err("invalid_input", "Invalid completion request."));
   }
 
-  const result = await completePaymentAndReserve(prisma, {
+  const result = await completePaymentAndReserve({
+    prisma,
     paymentId: params.paymentId,
     userId,
     outcome: parsed.data.outcome,
   });
 
-  if (!result.ok) {
-    const statusByResult = {
-      conflict: 409,
-      forbidden: 403,
-      not_found: 404,
-    } as const;
+  if (!result.ok) return errToResponse(result);
 
-    return NextResponse.json(
-      { error: result.message, status: result.status },
-      { status: statusByResult[result.status] },
-    );
-  }
-
-  return NextResponse.json(result);
+  return NextResponse.json(result.value);
 }

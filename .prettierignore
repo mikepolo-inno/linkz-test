@@ -1,0 +1,5 @@
+.next
+node_modules
+prisma/dev.db*
+prisma/test.db*
+package-lock.json

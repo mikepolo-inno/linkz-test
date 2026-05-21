@@ -1,15 +1,23 @@
 import { PrismaClient } from "@prisma/client";
 
-const globalForPrisma = globalThis as unknown as {
-  prisma?: PrismaClient;
-};
+import { env } from "@/lib/env";
 
+declare global {
+  // eslint-disable-next-line no-var
+  var __prisma: PrismaClient | undefined;
+}
+
+/**
+ * Reuse a single PrismaClient across hot reloads in development so we don't
+ * exhaust the SQLite connection limit. In production we create a fresh client
+ * per process.
+ */
 export const prisma =
-  globalForPrisma.prisma ??
+  globalThis.__prisma ??
   new PrismaClient({
-    log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
+    log: env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
   });
 
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
+if (env.NODE_ENV !== "production") {
+  globalThis.__prisma = prisma;
 }
