@@ -130,7 +130,6 @@ export function CheckoutPanel({
           disabled={isFinalised}
           loading={isPending}
         >
-          <ShieldCheck className="h-4 w-4" />
           Mock successful payment
         </Button>
         <Button
