@@ -4,12 +4,16 @@ import { SiteHeader } from "@/components/site-header";
 import { getSession } from "@/features/auth/session";
 import { SeatMap } from "@/features/seats/components/seat-map";
 import { listSeats } from "@/features/seats/queries";
+import { prisma } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
   const session = await getSession();
-  const seats = await listSeats(session?.user?.id ?? null);
+  const seats = await listSeats({
+    prisma,
+    currentUserId: session?.user?.id ?? null,
+  });
 
   const userReservation = seats.find((seat) => seat.reservedByCurrentUser);
 
