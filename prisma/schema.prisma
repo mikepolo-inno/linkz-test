@@ -1,0 +1,65 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String        @id @default(cuid())
+  email        String        @unique
+  name         String?
+  passwordHash String
+  createdAt    DateTime      @default(now())
+  payments     Payment[]
+  reservations Reservation[]
+  seats        Seat[]        @relation("SeatReservedBy")
+}
+
+model Seat {
+  id               String        @id @default(cuid())
+  label            String        @unique
+  status           String        @default("AVAILABLE")
+  reservedByUserId String?
+  reservedAt       DateTime?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  reservedBy       User?         @relation("SeatReservedBy", fields: [reservedByUserId], references: [id])
+  payments         Payment[]
+  reservation      Reservation?
+}
+
+model Payment {
+  id             String        @id @default(cuid())
+  userId         String
+  seatId         String
+  amountCents    Int
+  currency       String        @default("USD")
+  status         String   @default("PENDING")
+  idempotencyKey String        @unique
+  failureReason  String?
+  completedAt    DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  user           User          @relation(fields: [userId], references: [id])
+  seat           Seat          @relation(fields: [seatId], references: [id])
+  reservation    Reservation?
+
+  @@index([userId])
+  @@index([seatId])
+}
+
+model Reservation {
+  id        String   @id @default(cuid())
+  userId    String
+  seatId    String   @unique
+  paymentId String   @unique
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+  seat      Seat     @relation(fields: [seatId], references: [id])
+  payment   Payment  @relation(fields: [paymentId], references: [id])
+
+  @@index([userId])
+}
