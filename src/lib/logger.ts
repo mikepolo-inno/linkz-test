@@ -27,7 +27,8 @@ function emit(level: LogLevel, message: string, payload?: LogPayload) {
     ...payload,
   };
 
-  const sink = level === "error" ? console.error : level === "warn" ? console.warn : console.log;
+  const sink =
+    level === "error" ? console.error : level === "warn" ? console.warn : console.log;
   sink(JSON.stringify(entry));
 }
 

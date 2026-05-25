@@ -8,6 +8,8 @@ import { PaymentStatus, SeatStatus } from "@/lib/enums";
 const prisma = new PrismaClient();
 
 async function reset() {
+  await prisma.paymentEvent.deleteMany();
+  await prisma.seatLock.deleteMany();
   await prisma.reservation.deleteMany();
   await prisma.payment.deleteMany();
   await prisma.seat.deleteMany();
@@ -17,9 +19,9 @@ async function reset() {
 async function setup() {
   const user = await prisma.user.create({
     data: {
+      clerkUserId: "clerk_buyer",
       email: "buyer@example.com",
       name: "buyer",
-      passwordHash: "n/a",
     },
   });
   const seat = await prisma.seat.create({ data: { label: "A1" } });
@@ -40,14 +42,15 @@ describe("completePaymentAndReserve", () => {
 
   it("returns payment_not_found for an unknown payment id", async () => {
     const user = await prisma.user.create({
-      data: { email: "u@example.com", name: "u", passwordHash: "n/a" },
+      data: { clerkUserId: "clerk_u", email: "u@example.com", name: "u" },
     });
 
     const result = await completePaymentAndReserve({
       prisma,
       paymentId: "does-not-exist",
       userId: user.id,
-      outcome: "success",
+      gatewayEventId: "evt_missing_success",
+      gatewayStatus: "succeeded",
     });
 
     expect(result.ok).toBe(false);
@@ -63,7 +66,10 @@ describe("completePaymentAndReserve", () => {
       prisma,
       paymentId,
       userId: user.id,
-      outcome: "failure",
+      gatewayEventId: "evt_failed",
+      gatewayStatus: "failed",
+      failureReason: "Mock gateway declined the payment.",
+      source: "mock_gateway",
     });
 
     expect(result.ok).toBe(true);
@@ -74,8 +80,13 @@ describe("completePaymentAndReserve", () => {
       where: { id: paymentId },
     });
     expect(payment.status).toBe(PaymentStatus.FAILED);
-    expect(payment.failureReason).toMatch(/mock/i);
+    expect(payment.failureReason).toMatch(/mock gateway/i);
     expect(payment.completedAt).toBeInstanceOf(Date);
+
+    const event = await prisma.paymentEvent.findFirstOrThrow({
+      where: { paymentId, type: "GATEWAY_PAYMENT_FAILED" },
+    });
+    expect(event.gatewayEventId).toBe("evt_failed");
   });
 
   it("does not create a reservation when payment fails", async () => {
@@ -85,7 +96,9 @@ describe("completePaymentAndReserve", () => {
       prisma,
       paymentId,
       userId: user.id,
-      outcome: "failure",
+      gatewayEventId: "evt_failed_no_reservation",
+      gatewayStatus: "failed",
+      failureReason: "Mock gateway declined the payment.",
     });
 
     const reservation = await prisma.reservation.findFirst({
@@ -104,7 +117,9 @@ describe("completePaymentAndReserve", () => {
       prisma,
       paymentId,
       userId: user.id,
-      outcome: "failure",
+      gatewayEventId: "evt_failed_once",
+      gatewayStatus: "failed",
+      failureReason: "Mock gateway declined the payment.",
     });
     const beforeRow = await prisma.payment.findUniqueOrThrow({
       where: { id: paymentId },
@@ -114,7 +129,8 @@ describe("completePaymentAndReserve", () => {
       prisma,
       paymentId,
       userId: user.id,
-      outcome: "success",
+      gatewayEventId: "evt_success_after_failed",
+      gatewayStatus: "succeeded",
     });
 
     expect(result.ok).toBe(true);
@@ -136,7 +152,8 @@ describe("completePaymentAndReserve", () => {
       prisma,
       paymentId,
       userId: user.id,
-      outcome: "success",
+      gatewayEventId: "evt_success_stamp",
+      gatewayStatus: "succeeded",
     });
 
     expect(result.ok).toBe(true);
@@ -154,7 +171,8 @@ describe("completePaymentAndReserve", () => {
       prisma,
       paymentId,
       userId: user.id,
-      outcome: "success",
+      gatewayEventId: "evt_success_reservation",
+      gatewayStatus: "succeeded",
     });
 
     const reservations = await prisma.reservation.findMany();
@@ -170,9 +188,9 @@ describe("completePaymentAndReserve", () => {
     const { paymentId } = await setup();
     const attacker = await prisma.user.create({
       data: {
+        clerkUserId: "clerk_attacker",
         email: "attacker@example.com",
         name: "attacker",
-        passwordHash: "n/a",
       },
     });
 
@@ -180,7 +198,8 @@ describe("completePaymentAndReserve", () => {
       prisma,
       paymentId,
       userId: attacker.id,
-      outcome: "success",
+      gatewayEventId: "evt_attacker",
+      gatewayStatus: "succeeded",
     });
 
     expect(result.ok).toBe(false);

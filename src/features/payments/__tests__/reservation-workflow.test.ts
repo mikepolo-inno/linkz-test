@@ -9,6 +9,8 @@ import { seedDemoData } from "@/lib/seed";
 const prisma = new PrismaClient();
 
 async function resetDatabase() {
+  await prisma.paymentEvent.deleteMany();
+  await prisma.seatLock.deleteMany();
   await prisma.reservation.deleteMany();
   await prisma.payment.deleteMany();
   await prisma.seat.deleteMany();
@@ -18,9 +20,9 @@ async function resetDatabase() {
 async function createUser(email: string) {
   return prisma.user.create({
     data: {
+      clerkUserId: `clerk_${email}`,
       email,
       name: email.split("@")[0],
-      passwordHash: "not-used-in-tests",
     },
   });
 }
@@ -69,7 +71,8 @@ describe("reservation workflow", () => {
       prisma,
       paymentId: payment.value.paymentId,
       userId: user.id,
-      outcome: "success",
+      gatewayEventId: "evt_workflow_success",
+      gatewayStatus: "succeeded",
     });
 
     const reservedSeat = await prisma.seat.findUniqueOrThrow({
@@ -101,7 +104,9 @@ describe("reservation workflow", () => {
       prisma,
       paymentId: payment.value.paymentId,
       userId: user.id,
-      outcome: "failure",
+      gatewayEventId: "evt_workflow_failure",
+      gatewayStatus: "failed",
+      failureReason: "Mock gateway declined the payment.",
     });
 
     const availableSeat = await prisma.seat.findUniqueOrThrow({
@@ -129,7 +134,8 @@ describe("reservation workflow", () => {
       prisma,
       paymentId: payment.value.paymentId,
       userId: attacker.id,
-      outcome: "success",
+      gatewayEventId: "evt_workflow_attack",
+      gatewayStatus: "succeeded",
     });
 
     expect(result.ok).toBe(false);
@@ -152,7 +158,8 @@ describe("reservation workflow", () => {
       prisma,
       paymentId: firstPayment.value.paymentId,
       userId: firstUser.id,
-      outcome: "success",
+      gatewayEventId: "evt_first_success",
+      gatewayStatus: "succeeded",
     });
 
     const secondPayment = await createPaymentIntent({
@@ -180,13 +187,15 @@ describe("reservation workflow", () => {
       prisma,
       paymentId: payment.value.paymentId,
       userId: user.id,
-      outcome: "success",
+      gatewayEventId: "evt_repeat_success",
+      gatewayStatus: "succeeded",
     });
     const secondResult = await completePaymentAndReserve({
       prisma,
       paymentId: payment.value.paymentId,
       userId: user.id,
-      outcome: "success",
+      gatewayEventId: "evt_repeat_success",
+      gatewayStatus: "succeeded",
     });
     const reservationCount = await prisma.reservation.count();
 
@@ -201,7 +210,7 @@ describe("reservation workflow", () => {
     expect(reservationCount).toBe(1);
   });
 
-  it("recovers from a race where the seat was reserved between intent and completion", async () => {
+  it("rejects a second buyer while the first checkout holds the seat", async () => {
     const firstUser = await createUser("first@example.com");
     const secondUser = await createUser("second@example.com");
     const seat = await createSeat();
@@ -216,31 +225,15 @@ describe("reservation workflow", () => {
       seatId: seat.id,
       userId: secondUser.id,
     });
-    if (!firstPayment.ok || !secondPayment.ok) {
-      throw new Error("both payments should be created");
-    }
 
-    const firstResult = await completePaymentAndReserve({
-      prisma,
-      paymentId: firstPayment.value.paymentId,
-      userId: firstUser.id,
-      outcome: "success",
-    });
-    const secondResult = await completePaymentAndReserve({
-      prisma,
-      paymentId: secondPayment.value.paymentId,
-      userId: secondUser.id,
-      outcome: "success",
-    });
+    expect(secondPayment.ok).toBe(false);
+    if (secondPayment.ok) throw new Error("expected lock conflict");
+    expect(secondPayment.code).toBe("seat_locked");
 
-    expect(firstResult.ok).toBe(true);
-    expect(secondResult.ok).toBe(false);
-    if (secondResult.ok) throw new Error("expected seat_conflict");
-    expect(secondResult.code).toBe("seat_conflict");
-
-    const failedPayment = await prisma.payment.findUniqueOrThrow({
-      where: { id: secondPayment.value.paymentId },
+    const pendingPayments = await prisma.payment.count({
+      where: { seatId: seat.id, status: PaymentStatus.PENDING },
     });
-    expect(failedPayment.status).toBe(PaymentStatus.FAILED);
+    expect(firstPayment.ok).toBe(true);
+    expect(pendingPayments).toBe(1);
   });
 });

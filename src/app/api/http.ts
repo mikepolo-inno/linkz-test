@@ -9,7 +9,9 @@ const HTTP_STATUS_BY_CODE: Record<string, number> = {
   payment_not_found: 404,
   forbidden: 403,
   seat_unavailable: 409,
+  seat_locked: 409,
   seat_conflict: 409,
+  lock_expired: 409,
 };
 
 /**
@@ -19,8 +21,5 @@ const HTTP_STATUS_BY_CODE: Record<string, number> = {
  */
 export function errToResponse(error: Err<string>): NextResponse {
   const status = HTTP_STATUS_BY_CODE[error.code] ?? 400;
-  return NextResponse.json(
-    { error: error.message, code: error.code },
-    { status },
-  );
+  return NextResponse.json({ error: error.message, code: error.code }, { status });
 }

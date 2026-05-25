@@ -7,6 +7,8 @@ export type SeatView = {
   label: string;
   status: SeatStatus;
   reservedByCurrentUser: boolean;
+  lockedByCurrentUser: boolean;
+  lockExpiresAt: Date | null;
 };
 
 type ListSeatsArgs = {
@@ -26,6 +28,7 @@ export async function listSeats({
   prisma,
   currentUserId,
 }: ListSeatsArgs): Promise<SeatView[]> {
+  const now = new Date();
   const rows = await prisma.seat.findMany({
     orderBy: { label: "asc" },
     select: {
@@ -33,14 +36,31 @@ export async function listSeats({
       label: true,
       status: true,
       reservedByUserId: true,
+      lockedByUserId: true,
+      lockExpiresAt: true,
     },
   });
 
-  return rows.map((seat) => ({
-    id: seat.id,
-    label: seat.label,
-    status: isSeatStatus(seat.status) ? seat.status : SeatStatus.AVAILABLE,
-    reservedByCurrentUser:
-      Boolean(currentUserId) && seat.reservedByUserId === currentUserId,
-  }));
+  return rows.map((seat) => {
+    const hasActiveLock =
+      seat.status === SeatStatus.AVAILABLE &&
+      Boolean(seat.lockedByUserId) &&
+      Boolean(seat.lockExpiresAt) &&
+      seat.lockExpiresAt! > now;
+
+    return {
+      id: seat.id,
+      label: seat.label,
+      status: hasActiveLock
+        ? SeatStatus.LOCKED
+        : isSeatStatus(seat.status)
+          ? seat.status
+          : SeatStatus.AVAILABLE,
+      reservedByCurrentUser:
+        Boolean(currentUserId) && seat.reservedByUserId === currentUserId,
+      lockedByCurrentUser:
+        hasActiveLock && Boolean(currentUserId) && seat.lockedByUserId === currentUserId,
+      lockExpiresAt: hasActiveLock ? seat.lockExpiresAt : null,
+    };
+  });
 }

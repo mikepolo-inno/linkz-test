@@ -26,7 +26,13 @@ export async function POST(
     prisma,
     paymentId: params.paymentId,
     userId,
-    outcome: parsed.data.outcome,
+    gatewayEventId: `mock:${params.paymentId}:${parsed.data.outcome}`,
+    gatewayStatus: parsed.data.outcome === "success" ? "succeeded" : "failed",
+    failureReason:
+      parsed.data.outcome === "failure"
+        ? "Mock gateway declined the payment."
+        : undefined,
+    source: "mock_gateway",
   });
 
   if (!result.ok) return errToResponse(result);

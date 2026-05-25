@@ -11,8 +11,8 @@ export default function PaymentNotFound() {
         </p>
         <h2 className="mt-2 text-xl font-bold">We could not find that payment</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          The payment may have expired, been completed already, or belongs to a
-          different account.
+          The payment may have expired, been completed already, or belongs to a different
+          account.
         </p>
         <Link
           href="/"

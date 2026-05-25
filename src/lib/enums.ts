@@ -1,12 +1,17 @@
 export const SeatStatus = {
   AVAILABLE: "AVAILABLE",
+  LOCKED: "LOCKED",
   RESERVED: "RESERVED",
 } as const;
 
 export type SeatStatus = (typeof SeatStatus)[keyof typeof SeatStatus];
 
 export function isSeatStatus(value: string): value is SeatStatus {
-  return value === SeatStatus.AVAILABLE || value === SeatStatus.RESERVED;
+  return (
+    value === SeatStatus.AVAILABLE ||
+    value === SeatStatus.LOCKED ||
+    value === SeatStatus.RESERVED
+  );
 }
 
 export const PaymentStatus = {

@@ -1,9 +1,31 @@
-import { getServerSession } from "next-auth";
+import { auth, currentUser } from "@clerk/nextjs/server";
 
-import { authOptions } from "@/features/auth/options";
+import { prisma } from "@/lib/db";
 
-export function getSession() {
-  return getServerSession(authOptions);
+type AppSession = {
+  user: {
+    id: string;
+    email: string | null;
+    name: string | null;
+  };
+};
+
+export async function getSession(): Promise<AppSession | null> {
+  const { userId: clerkUserId } = await auth();
+  if (!clerkUserId) return null;
+
+  const clerkUser = await currentUser();
+  const email = clerkUser?.primaryEmailAddress?.emailAddress ?? null;
+  const name = clerkUser?.fullName ?? clerkUser?.username ?? null;
+
+  const user = await prisma.user.upsert({
+    where: { clerkUserId },
+    update: { email, name },
+    create: { clerkUserId, email, name },
+    select: { id: true, email: true, name: true },
+  });
+
+  return { user };
 }
 
 /**

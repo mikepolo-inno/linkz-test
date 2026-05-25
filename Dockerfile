@@ -17,8 +17,8 @@ RUN apk add --no-cache libc6-compat openssl
 ENV NEXT_TELEMETRY_DISABLED=1 \
     NODE_ENV=production \
     DATABASE_URL="file:/tmp/next-build.db" \
-    NEXTAUTH_URL="http://localhost:3000" \
-    NEXTAUTH_SECRET="docker-build-placeholder-secret"
+    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_test_YnVpbGQtcGxhY2Vob2xkZXIuY2xlcmsuYWNjb3VudHMuZGV2JA" \
+    CLERK_SECRET_KEY="sk_test_build_placeholder"
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
@@ -45,8 +45,8 @@ ENV NODE_ENV=production \
     PORT=3000 \
     HOSTNAME=0.0.0.0 \
     DATABASE_URL="file:/app/data/app.db" \
-    NEXTAUTH_URL="http://localhost:3000" \
-    NEXTAUTH_SECRET="replace-with-a-long-random-secret-please" \
+    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_test_replace-with-clerk-publishable-key" \
+    CLERK_SECRET_KEY="sk_test_replace-with-clerk-secret-key" \
     LOG_LEVEL=info \
     SEED_ON_START=1
 

@@ -105,7 +105,7 @@ export function CheckoutPanel({
         <div
           role="status"
           className={cn(
-            "flex items-start gap-3 rounded-2xl border p-4 text-sm animate-fade-in",
+            "flex animate-fade-in items-start gap-3 rounded-2xl border p-4 text-sm",
             feedback.tone === "success"
               ? "border-success/30 bg-success/10 text-success"
               : "border-danger/30 bg-danger/10 text-danger",
@@ -146,9 +146,9 @@ export function CheckoutPanel({
       </div>
 
       <p className="text-xs text-muted-foreground">
-        This is a mock checkout. A real integration would redirect to a hosted
-        provider, listen for signed webhooks, and confirm the reservation
-        server-side after the provider settles the charge.
+        This is a mock checkout. A real integration would redirect to a hosted provider,
+        listen for signed webhooks, and confirm the reservation server-side after the
+        provider settles the charge.
       </p>
     </div>
   );

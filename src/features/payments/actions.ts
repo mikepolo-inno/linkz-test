@@ -12,14 +12,8 @@ import {
   type CompletePaymentError,
   type CompletePaymentSuccess,
 } from "./complete-payment";
-import {
-  createPaymentIntent,
-  type CreatePaymentError,
-} from "./create-payment-intent";
-import {
-  completePaymentSchema,
-  createPaymentSchema,
-} from "./schemas";
+import { createPaymentIntent, type CreatePaymentError } from "./create-payment-intent";
+import { completePaymentSchema, createPaymentSchema } from "./schemas";
 
 type AuthError = "unauthorized" | "invalid_input";
 
@@ -88,7 +82,13 @@ export async function completePaymentAction(
     prisma,
     paymentId,
     userId,
-    outcome: parsed.data.outcome,
+    gatewayEventId: `mock:${paymentId}:${parsed.data.outcome}`,
+    gatewayStatus: parsed.data.outcome === "success" ? "succeeded" : "failed",
+    failureReason:
+      parsed.data.outcome === "failure"
+        ? "Mock gateway declined the payment."
+        : undefined,
+    source: "mock_gateway",
   });
 
   logger.info("complete_payment", {

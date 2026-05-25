@@ -7,6 +7,8 @@ import { SeatStatus } from "@/lib/enums";
 const prisma = new PrismaClient();
 
 async function reset() {
+  await prisma.paymentEvent.deleteMany();
+  await prisma.seatLock.deleteMany();
   await prisma.reservation.deleteMany();
   await prisma.payment.deleteMany();
   await prisma.seat.deleteMany();
@@ -49,7 +51,7 @@ describe("listSeats", () => {
 
   it("flags reservedByCurrentUser only for the matching reservation owner", async () => {
     const owner = await prisma.user.create({
-      data: { email: "owner@example.com", name: "owner", passwordHash: "n/a" },
+      data: { clerkUserId: "clerk_owner", email: "owner@example.com", name: "owner" },
     });
     const seat = await prisma.seat.create({
       data: {
@@ -76,7 +78,7 @@ describe("listSeats", () => {
 
   it("never marks a seat as reservedByCurrentUser when the user is anonymous", async () => {
     const owner = await prisma.user.create({
-      data: { email: "u@example.com", name: "u", passwordHash: "n/a" },
+      data: { clerkUserId: "clerk_u", email: "u@example.com", name: "u" },
     });
     await prisma.seat.create({
       data: {
@@ -99,5 +101,28 @@ describe("listSeats", () => {
     const [seat] = await listSeats({ prisma, currentUserId: null });
 
     expect(seat.status).toBe(SeatStatus.AVAILABLE);
+  });
+
+  it("derives LOCKED status for active seat holds", async () => {
+    const owner = await prisma.user.create({
+      data: {
+        clerkUserId: "clerk_lock_owner",
+        email: "lock-owner@example.com",
+        name: "owner",
+      },
+    });
+    await prisma.seat.create({
+      data: {
+        label: "A1",
+        lockedByUserId: owner.id,
+        lockExpiresAt: new Date(Date.now() + 60_000),
+      },
+    });
+
+    const [seat] = await listSeats({ prisma, currentUserId: owner.id });
+
+    expect(seat.status).toBe(SeatStatus.LOCKED);
+    expect(seat.lockedByCurrentUser).toBe(true);
+    expect(seat.lockExpiresAt).toBeInstanceOf(Date);
   });
 });

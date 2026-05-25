@@ -31,9 +31,8 @@ export default async function HomePage() {
             Reserve your seat in <span className="text-primary">seconds</span>.
           </h1>
           <p className="max-w-xl text-base text-muted-foreground sm:text-lg">
-            Browse availability publicly, sign in to pick a seat, and finish a
-            mock checkout. The seat moves to reserved only after a payment
-            actually succeeds.
+            Browse availability publicly, sign in to pick a seat, and finish a mock
+            checkout. The seat moves to reserved only after a payment actually succeeds.
           </p>
           {userReservation ? (
             <p className="w-fit rounded-full bg-success/10 px-4 py-2 text-sm font-semibold text-success">
@@ -42,10 +41,7 @@ export default async function HomePage() {
           ) : null}
         </section>
 
-        <SeatMap
-          isAuthenticated={Boolean(session?.user)}
-          seats={seats}
-        />
+        <SeatMap isAuthenticated={Boolean(session?.user)} seats={seats} />
       </main>
 
       <footer className="mt-auto pt-10 text-xs text-muted-foreground">

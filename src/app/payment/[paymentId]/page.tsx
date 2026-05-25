@@ -58,12 +58,10 @@ export default async function PaymentPage({ params }: PaymentPageProps) {
           <p className="text-xs font-semibold uppercase tracking-widest text-primary">
             Mock checkout
           </p>
-          <h1 className="mt-2 text-3xl font-black tracking-tight">
-            Complete payment
-          </h1>
+          <h1 className="mt-2 text-3xl font-black tracking-tight">Complete payment</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Seat <strong>{payment.seat.label}</strong> will only be reserved
-            after a successful payment completion.
+            Seat <strong>{payment.seat.label}</strong> will only be reserved after a
+            successful payment completion.
           </p>
 
           <div className="mt-6">

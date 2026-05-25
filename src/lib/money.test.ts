@@ -16,9 +16,9 @@ describe("formatMoney", () => {
   });
 
   it("respects the requested ISO currency", () => {
-    expect(
-      formatMoney({ amountCents: 1234, currency: "EUR", locale: "en-IE" }),
-    ).toBe("€12.34");
+    expect(formatMoney({ amountCents: 1234, currency: "EUR", locale: "en-IE" })).toBe(
+      "€12.34",
+    );
   });
 
   it("honors a non-default locale", () => {

@@ -1,15 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  isPaymentStatus,
-  isSeatStatus,
-  PaymentStatus,
-  SeatStatus,
-} from "@/lib/enums";
+import { isPaymentStatus, isSeatStatus, PaymentStatus, SeatStatus } from "@/lib/enums";
 
 describe("seat status guard", () => {
   it("accepts the documented values", () => {
     expect(isSeatStatus(SeatStatus.AVAILABLE)).toBe(true);
+    expect(isSeatStatus(SeatStatus.LOCKED)).toBe(true);
     expect(isSeatStatus(SeatStatus.RESERVED)).toBe(true);
   });
 

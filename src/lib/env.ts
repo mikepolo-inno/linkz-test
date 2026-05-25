@@ -9,11 +9,8 @@ import { z } from "zod";
  */
 const serverEnvSchema = z.object({
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
-  NEXTAUTH_URL: z.string().url().optional(),
-  NEXTAUTH_SECRET: z
-    .string()
-    .min(16, "NEXTAUTH_SECRET must be at least 16 characters")
-    .optional(),
+  NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z.string().min(1).optional(),
+  CLERK_SECRET_KEY: z.string().min(1).optional(),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).optional(),
 });
@@ -30,9 +27,10 @@ function isNextBuildPhase(): boolean {
 function buildStubEnv(): ServerEnv {
   return serverEnvSchema.parse({
     DATABASE_URL: process.env.DATABASE_URL ?? "file:/tmp/next-build.db",
-    NEXTAUTH_URL: process.env.NEXTAUTH_URL ?? "http://localhost:3000",
-    NEXTAUTH_SECRET:
-      process.env.NEXTAUTH_SECRET ?? "docker-build-placeholder-secret",
+    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:
+      process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ??
+      "pk_test_YnVpbGQtcGxhY2Vob2xkZXIuY2xlcmsuYWNjb3VudHMuZGV2JA",
+    CLERK_SECRET_KEY: process.env.CLERK_SECRET_KEY ?? "sk_test_build_placeholder",
     NODE_ENV: process.env.NODE_ENV ?? "production",
     LOG_LEVEL: process.env.LOG_LEVEL,
   });
@@ -53,11 +51,11 @@ function loadEnv(): ServerEnv {
   }
 
   if (parsed.data.NODE_ENV === "production") {
-    if (!parsed.data.NEXTAUTH_SECRET) {
-      throw new Error("NEXTAUTH_SECRET is required in production");
+    if (!parsed.data.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) {
+      throw new Error("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is required in production");
     }
-    if (!parsed.data.NEXTAUTH_URL) {
-      throw new Error("NEXTAUTH_URL is required in production");
+    if (!parsed.data.CLERK_SECRET_KEY) {
+      throw new Error("CLERK_SECRET_KEY is required in production");
     }
   }
 

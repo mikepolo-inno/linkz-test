@@ -30,8 +30,9 @@ export function SeatMap({ isAuthenticated, seats }: SeatMapProps) {
     [seats, selectedSeatId],
   );
 
-  const availableCount = seats.filter((seat) => seat.status === SeatStatus.AVAILABLE)
-    .length;
+  const availableCount = seats.filter(
+    (seat) => seat.status === SeatStatus.AVAILABLE,
+  ).length;
 
   const price = formatMoney({
     amountCents: PAYMENT_AMOUNT_CENTS,
@@ -120,12 +121,17 @@ type SeatTileProps = {
 function SeatTile({ seat, isSelected, onSelect }: SeatTileProps) {
   const isAvailable = seat.status === SeatStatus.AVAILABLE;
   const isMine = seat.reservedByCurrentUser;
+  const isMyLock = seat.lockedByCurrentUser;
 
   const status: { tone: "success" | "danger" | "info"; label: string } = isMine
     ? { tone: "info", label: "Reserved by you" }
-    : isAvailable
-      ? { tone: "success", label: "Available" }
-      : { tone: "danger", label: "Reserved" };
+    : isMyLock
+      ? { tone: "info", label: "Held by you" }
+      : isAvailable
+        ? { tone: "success", label: "Available" }
+        : seat.status === SeatStatus.LOCKED
+          ? { tone: "danger", label: "Temporarily held" }
+          : { tone: "danger", label: "Reserved" };
 
   return (
     <button
@@ -158,9 +164,13 @@ function SeatTile({ seat, isSelected, onSelect }: SeatTileProps) {
       <p className="text-sm text-muted-foreground">
         {isMine
           ? "This is your seat. See you at the show."
-          : isAvailable
-            ? "Tap to select. Reserved after successful payment."
-            : "Another guest has this one."}
+          : isMyLock
+            ? "Checkout is already in progress for this seat."
+            : isAvailable
+              ? "Tap to select. Held while you complete payment."
+              : seat.status === SeatStatus.LOCKED
+                ? "Another guest is checking out. This hold can expire."
+                : "Another guest has this one."}
       </p>
 
       <span
@@ -186,7 +196,7 @@ function Legend() {
       </li>
       <li className="flex items-center gap-2">
         <span className="h-2 w-2 rounded-full bg-danger" />
-        Reserved
+        Reserved / held
       </li>
     </ul>
   );
@@ -236,12 +246,7 @@ function SelectionPanel({
         </p>
       </div>
 
-      <Button
-        size="lg"
-        onClick={onProceed}
-        disabled={!selectedSeat}
-        loading={isPending}
-      >
+      <Button size="lg" onClick={onProceed} disabled={!selectedSeat} loading={isPending}>
         {!isAuthenticated && selectedSeat
           ? "Sign in to reserve"
           : isPending

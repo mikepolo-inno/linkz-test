@@ -9,13 +9,16 @@ datasource db {
 
 model User {
   id           String        @id @default(cuid())
-  email        String        @unique
+  clerkUserId  String        @unique
+  email        String?       @unique
   name         String?
-  passwordHash String
   createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
   payments     Payment[]
   reservations Reservation[]
   seats        Seat[]        @relation("SeatReservedBy")
+  lockedSeats  Seat[]        @relation("SeatLockedBy")
+  seatLocks    SeatLock[]
 }
 
 model Seat {
@@ -24,11 +27,20 @@ model Seat {
   status           String        @default("AVAILABLE")
   reservedByUserId String?
   reservedAt       DateTime?
+  lockedByUserId   String?
+  lockExpiresAt    DateTime?
+  lockPaymentId    String?       @unique
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
   reservedBy       User?         @relation("SeatReservedBy", fields: [reservedByUserId], references: [id])
+  lockedBy         User?         @relation("SeatLockedBy", fields: [lockedByUserId], references: [id])
+  lockPayment      Payment?      @relation("SeatLockPayment", fields: [lockPaymentId], references: [id])
   payments         Payment[]
   reservation      Reservation?
+  locks            SeatLock[]
+
+  @@index([lockedByUserId])
+  @@index([lockExpiresAt])
 }
 
 model Payment {
@@ -45,10 +57,45 @@ model Payment {
   updatedAt      DateTime      @updatedAt
   user           User          @relation(fields: [userId], references: [id])
   seat           Seat          @relation(fields: [seatId], references: [id])
+  lockedSeat     Seat?         @relation("SeatLockPayment")
+  lock           SeatLock?
+  events         PaymentEvent[]
   reservation    Reservation?
 
   @@index([userId])
   @@index([seatId])
+}
+
+model SeatLock {
+  id         String    @id @default(cuid())
+  userId     String
+  seatId     String
+  paymentId  String    @unique
+  expiresAt  DateTime
+  releasedAt DateTime?
+  createdAt  DateTime  @default(now())
+  user       User      @relation(fields: [userId], references: [id])
+  seat       Seat      @relation(fields: [seatId], references: [id])
+  payment    Payment   @relation(fields: [paymentId], references: [id])
+
+  @@index([seatId, expiresAt])
+  @@index([userId])
+}
+
+model PaymentEvent {
+  id             String   @id @default(cuid())
+  paymentId      String
+  type           String
+  status         String?
+  source         String
+  message        String?
+  gatewayEventId String?  @unique
+  payload        String?
+  createdAt      DateTime @default(now())
+  payment        Payment  @relation(fields: [paymentId], references: [id])
+
+  @@index([paymentId])
+  @@index([type])
 }
 
 model Reservation {

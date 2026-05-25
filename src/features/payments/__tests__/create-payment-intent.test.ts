@@ -1,16 +1,15 @@
 import { PrismaClient } from "@prisma/client";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
-import {
-  PAYMENT_AMOUNT_CENTS,
-  PAYMENT_CURRENCY,
-} from "@/features/payments/config";
+import { PAYMENT_AMOUNT_CENTS, PAYMENT_CURRENCY } from "@/features/payments/config";
 import { createPaymentIntent } from "@/features/payments/create-payment-intent";
 import { PaymentStatus, SeatStatus } from "@/lib/enums";
 
 const prisma = new PrismaClient();
 
 async function reset() {
+  await prisma.paymentEvent.deleteMany();
+  await prisma.seatLock.deleteMany();
   await prisma.reservation.deleteMany();
   await prisma.payment.deleteMany();
   await prisma.seat.deleteMany();
@@ -19,7 +18,7 @@ async function reset() {
 
 async function createUser(email = "buyer@example.com") {
   return prisma.user.create({
-    data: { email, name: email, passwordHash: "n/a" },
+    data: { clerkUserId: `clerk_${email}`, email, name: email },
   });
 }
 
@@ -83,9 +82,14 @@ describe("createPaymentIntent", () => {
     expect(payment.currency).toBe(PAYMENT_CURRENCY);
     expect(payment.userId).toBe(user.id);
     expect(payment.seatId).toBe(seat.id);
+
+    const lock = await prisma.seatLock.findUniqueOrThrow({
+      where: { paymentId: payment.id },
+    });
+    expect(lock.expiresAt).toBeInstanceOf(Date);
   });
 
-  it("does NOT touch the seat row when creating a payment intent", async () => {
+  it("locks the seat while checkout is pending", async () => {
     const user = await createUser();
     const seat = await prisma.seat.create({ data: { label: "A1" } });
 
@@ -93,11 +97,12 @@ describe("createPaymentIntent", () => {
 
     const after = await prisma.seat.findUniqueOrThrow({ where: { id: seat.id } });
     expect(after.status).toBe(SeatStatus.AVAILABLE);
-    expect(after.reservedByUserId).toBeNull();
-    expect(after.reservedAt).toBeNull();
+    expect(after.lockedByUserId).toBe(user.id);
+    expect(after.lockPaymentId).toBeTruthy();
+    expect(after.lockExpiresAt).toBeInstanceOf(Date);
   });
 
-  it("permits multiple concurrent PENDING intents on the same seat", async () => {
+  it("rejects another buyer while the seat is locked", async () => {
     const first = await createUser("first@example.com");
     const second = await createUser("second@example.com");
     const seat = await prisma.seat.create({ data: { label: "A1" } });
@@ -114,15 +119,17 @@ describe("createPaymentIntent", () => {
     });
 
     expect(a.ok).toBe(true);
-    expect(b.ok).toBe(true);
+    expect(b.ok).toBe(false);
+    if (b.ok) throw new Error("second payment should not be created");
+    expect(b.code).toBe("seat_locked");
 
     const pendings = await prisma.payment.findMany({
       where: { seatId: seat.id, status: PaymentStatus.PENDING },
     });
-    expect(pendings).toHaveLength(2);
+    expect(pendings).toHaveLength(1);
   });
 
-  it("generates unique idempotency keys per intent", async () => {
+  it("returns the existing pending payment for the same user lock", async () => {
     const user = await createUser();
     const seat = await prisma.seat.create({ data: { label: "A1" } });
 
@@ -139,12 +146,6 @@ describe("createPaymentIntent", () => {
 
     if (!first.ok || !second.ok) throw new Error("both should succeed");
 
-    const rows = await prisma.payment.findMany({
-      where: { id: { in: [first.value.paymentId, second.value.paymentId] } },
-      select: { idempotencyKey: true },
-    });
-
-    const keys = new Set(rows.map((row) => row.idempotencyKey));
-    expect(keys.size).toBe(2);
+    expect(second.value.paymentId).toBe(first.value.paymentId);
   });
 });
