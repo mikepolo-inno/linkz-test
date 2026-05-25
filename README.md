@@ -47,19 +47,22 @@ npm install
 
 ### 2. Environment
 
-Copy `.env.example` to `.env` and set at least:
+Create a Clerk application first:
+
+1. Open [Clerk Dashboard](https://dashboard.clerk.com/).
+2. Create an application, for example `Linkz Seats`.
+3. Enable Email sign-in. Google sign-in is optional.
+4. In **Configure → API keys**, copy the publishable and secret keys.
+5. Add your local app URL in Clerk if prompted, usually
+   `http://localhost:3000` for `npm run dev`.
+
+Then copy `.env.example` to `.env` and set at least:
 
 ```env
 DATABASE_URL="file:./dev.db"
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_test_..."
 CLERK_SECRET_KEY="sk_test_..."
-NEXT_PUBLIC_CLERK_SIGN_IN_URL="/login"
-NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL="/"
-NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL="/"
 ```
-
-Sign-in uses a catch-all route at `src/app/login/[[...login]]/page.tsx` so Clerk
-can handle subpaths such as `/login/sso-callback` after OAuth.
 
 `src/lib/env.ts` validates variables at startup. In production,
 both Clerk keys are required. Configure the Clerk application session lifetime to
@@ -89,6 +92,17 @@ npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
+
+If port `3000` is already in use, Next.js will print another local URL such as
+`http://localhost:3001`. Add that URL to your Clerk development instance if
+Clerk blocks the redirect/origin.
+
+To run the production build locally instead:
+
+```bash
+npm run build
+npx next start -p 3000
+```
 
 ## Quick start (Docker)
 
