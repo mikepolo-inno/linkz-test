@@ -15,7 +15,6 @@ export function LoginForm() {
         routing="path"
         path="/login"
         fallbackRedirectUrl={callbackUrl}
-        forceRedirectUrl={callbackUrl}
       />
     </Card>
   );

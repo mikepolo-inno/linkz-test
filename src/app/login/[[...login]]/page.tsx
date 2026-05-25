@@ -1,6 +1,7 @@
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { Suspense } from "react";
 
 import { SiteHeader } from "@/components/site-header";
 import { LoginForm } from "@/features/auth/components/login-form";
@@ -31,7 +32,9 @@ export default async function LoginPage() {
             Sign in to select a seat and proceed to the mock payment flow.
           </p>
         </div>
-        <LoginForm />
+        <Suspense fallback={<div className="h-96 animate-pulse rounded-2xl bg-muted/40" />}>
+          <LoginForm />
+        </Suspense>
       </main>
     </>
   );

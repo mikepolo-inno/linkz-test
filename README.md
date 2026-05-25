@@ -53,7 +53,13 @@ Copy `.env.example` to `.env` and set at least:
 DATABASE_URL="file:./dev.db"
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_test_..."
 CLERK_SECRET_KEY="sk_test_..."
+NEXT_PUBLIC_CLERK_SIGN_IN_URL="/login"
+NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL="/"
+NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL="/"
 ```
+
+Sign-in uses a catch-all route at `src/app/login/[[...login]]/page.tsx` so Clerk
+can handle subpaths such as `/login/sso-callback` after OAuth.
 
 `src/lib/env.ts` validates variables at startup. In production,
 both Clerk keys are required. Configure the Clerk application session lifetime to

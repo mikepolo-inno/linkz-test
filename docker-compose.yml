@@ -17,6 +17,9 @@ services:
       DATABASE_URL: "file:/app/data/app.db"
       NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:-pk_test_replace-with-clerk-publishable-key}"
       CLERK_SECRET_KEY: "${CLERK_SECRET_KEY:-sk_test_replace-with-clerk-secret-key}"
+      NEXT_PUBLIC_CLERK_SIGN_IN_URL: "${NEXT_PUBLIC_CLERK_SIGN_IN_URL:-/login}"
+      NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL: "${NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL:-/}"
+      NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL: "${NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL:-/}"
       NODE_ENV: production
       LOG_LEVEL: "${LOG_LEVEL:-info}"
       # Set to 0 to keep DB state across container restarts without re-seeding.
