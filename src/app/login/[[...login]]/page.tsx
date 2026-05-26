@@ -32,7 +32,9 @@ export default async function LoginPage() {
             Sign in to select a seat and proceed to the mock payment flow.
           </p>
         </div>
-        <Suspense fallback={<div className="h-96 animate-pulse rounded-2xl bg-muted/40" />}>
+        <Suspense
+          fallback={<div className="h-96 animate-pulse rounded-2xl bg-muted/40" />}
+        >
           <LoginForm />
         </Suspense>
       </main>

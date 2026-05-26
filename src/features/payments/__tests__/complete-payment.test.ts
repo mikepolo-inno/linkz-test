@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { PrismaClient } from "@prisma/client";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
@@ -29,6 +30,7 @@ async function setup() {
     prisma,
     seatId: seat.id,
     userId: user.id,
+    idempotencyKey: randomUUID(),
   });
   if (!intent.ok) throw new Error("seed payment intent failed");
   return { user, seat, paymentId: intent.value.paymentId };

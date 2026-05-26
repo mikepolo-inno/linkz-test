@@ -1,5 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 
+import { expirePendingCheckouts } from "@/features/payments/checkout-expiry";
+import { ensureSqlitePragmas } from "@/lib/db";
 import { isSeatStatus, SeatStatus } from "@/lib/enums";
 
 export type SeatView = {
@@ -29,16 +31,23 @@ export async function listSeats({
   currentUserId,
 }: ListSeatsArgs): Promise<SeatView[]> {
   const now = new Date();
-  const rows = await prisma.seat.findMany({
-    orderBy: { label: "asc" },
-    select: {
-      id: true,
-      label: true,
-      status: true,
-      reservedByUserId: true,
-      lockedByUserId: true,
-      lockExpiresAt: true,
-    },
+
+  await ensureSqlitePragmas(prisma);
+
+  const rows = await prisma.$transaction(async (tx) => {
+    await expirePendingCheckouts(tx, now);
+
+    return tx.seat.findMany({
+      orderBy: { label: "asc" },
+      select: {
+        id: true,
+        label: true,
+        status: true,
+        reservedByUserId: true,
+        lockedByUserId: true,
+        lockExpiresAt: true,
+      },
+    });
   });
 
   return rows.map((seat) => {

@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { PrismaClient } from "@prisma/client";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
@@ -62,6 +63,7 @@ describe("reservation workflow", () => {
       prisma,
       seatId: seat.id,
       userId: user.id,
+      idempotencyKey: randomUUID(),
     });
 
     expect(payment.ok).toBe(true);
@@ -97,6 +99,7 @@ describe("reservation workflow", () => {
       prisma,
       seatId: seat.id,
       userId: user.id,
+      idempotencyKey: randomUUID(),
     });
     if (!payment.ok) throw new Error("payment should be created");
 
@@ -127,6 +130,7 @@ describe("reservation workflow", () => {
       prisma,
       seatId: seat.id,
       userId: owner.id,
+      idempotencyKey: randomUUID(),
     });
     if (!payment.ok) throw new Error("payment should be created");
 
@@ -151,6 +155,7 @@ describe("reservation workflow", () => {
       prisma,
       seatId: seat.id,
       userId: firstUser.id,
+      idempotencyKey: randomUUID(),
     });
     if (!firstPayment.ok) throw new Error("first payment should be created");
 
@@ -166,6 +171,7 @@ describe("reservation workflow", () => {
       prisma,
       seatId: seat.id,
       userId: secondUser.id,
+      idempotencyKey: randomUUID(),
     });
 
     expect(secondPayment.ok).toBe(false);
@@ -180,6 +186,7 @@ describe("reservation workflow", () => {
       prisma,
       seatId: seat.id,
       userId: user.id,
+      idempotencyKey: randomUUID(),
     });
     if (!payment.ok) throw new Error("payment should be created");
 
@@ -219,11 +226,13 @@ describe("reservation workflow", () => {
       prisma,
       seatId: seat.id,
       userId: firstUser.id,
+      idempotencyKey: randomUUID(),
     });
     const secondPayment = await createPaymentIntent({
       prisma,
       seatId: seat.id,
       userId: secondUser.id,
+      idempotencyKey: randomUUID(),
     });
 
     expect(secondPayment.ok).toBe(false);

@@ -1,6 +1,7 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 
 import { PaymentStatus, SeatStatus } from "@/lib/enums";
+import { ensureSqlitePragmas } from "@/lib/db";
 import { err, ok, type Result } from "@/lib/result";
 
 export type CompletePaymentSuccess =
@@ -11,6 +12,7 @@ export type CompletePaymentSuccess =
 export type CompletePaymentError =
   | "payment_not_found"
   | "forbidden"
+  | "duplicate_gateway_event"
   | "lock_expired"
   | "seat_conflict";
 
@@ -46,19 +48,22 @@ export async function completePaymentAndReserve({
   failureReason,
   source = "gateway_webhook",
 }: CompletePaymentArgs): Promise<CompletePaymentResult> {
-  return prisma.$transaction(async (tx) => {
-    const existingEvent = await tx.paymentEvent.findUnique({
-      where: { gatewayEventId },
-    });
+  await ensureSqlitePragmas(prisma);
 
-    const payment = await tx.payment.findUnique({
-      where: { id: paymentId },
-      include: {
-        reservation: { include: { seat: true } },
-        seat: true,
-        lock: true,
-      },
-    });
+  return prisma.$transaction(async (tx) => {
+    const [existingEvent, payment] = await Promise.all([
+      tx.paymentEvent.findUnique({
+        where: { gatewayEventId },
+      }),
+      tx.payment.findUnique({
+        where: { id: paymentId },
+        include: {
+          reservation: { include: { seat: true } },
+          seat: true,
+          lock: true,
+        },
+      }),
+    ]);
 
     if (!payment) {
       return err("payment_not_found", "Payment was not found.");
@@ -68,33 +73,16 @@ export async function completePaymentAndReserve({
       return err("forbidden", "This payment belongs to another user.");
     }
 
+    const completedResult = toCompletedPaymentResult(payment);
+    if (completedResult) {
+      return ok(completedResult);
+    }
+
     if (existingEvent) {
-      if (payment.status === PaymentStatus.SUCCEEDED && payment.reservation) {
-        return ok({
-          kind: "already_reserved",
-          seatLabel: payment.reservation.seat.label,
-        });
-      }
-      if (payment.status === PaymentStatus.FAILED) {
-        return ok({
-          kind: "failed",
-          reason: payment.failureReason ?? "Payment has already failed.",
-        });
-      }
-    }
-
-    if (payment.status === PaymentStatus.SUCCEEDED && payment.reservation) {
-      return ok({
-        kind: "already_reserved",
-        seatLabel: payment.reservation.seat.label,
-      });
-    }
-
-    if (payment.status === PaymentStatus.FAILED) {
-      return ok({
-        kind: "failed",
-        reason: payment.failureReason ?? "Payment has already failed.",
-      });
+      return err(
+        "duplicate_gateway_event",
+        "This gateway event has already been processed.",
+      );
     }
 
     if (gatewayStatus === "failed") {
@@ -249,4 +237,30 @@ async function releaseSeatLock(tx: Prisma.TransactionClient, paymentId: string) 
     where: { paymentId, releasedAt: null },
     data: { releasedAt: now },
   });
+}
+
+type PaymentWithState = Prisma.PaymentGetPayload<{
+  include: {
+    reservation: { include: { seat: true } };
+  };
+}>;
+
+function toCompletedPaymentResult(
+  payment: PaymentWithState,
+): CompletePaymentSuccess | null {
+  if (payment.status === PaymentStatus.SUCCEEDED && payment.reservation) {
+    return {
+      kind: "already_reserved",
+      seatLabel: payment.reservation.seat.label,
+    };
+  }
+
+  if (payment.status === PaymentStatus.FAILED) {
+    return {
+      kind: "failed",
+      reason: payment.failureReason ?? "Payment has already failed.",
+    };
+  }
+
+  return null;
 }

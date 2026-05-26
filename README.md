@@ -142,8 +142,10 @@ The container entrypoint runs in this order:
 
 1. `mkdir -p /app/data` — ensures the SQLite volume mount is writable.
 2. `prisma migrate deploy` — creates/updates tables in `app.db`.
-3. `node prisma/seed.mjs` — idempotent demo data (skip with `SEED_ON_START=0`).
-4. `next start` — listens on `0.0.0.0:3000`.
+3. Enable SQLite WAL pragmas (`journal_mode=WAL`, `busy_timeout=5000`,
+   `foreign_keys=ON`).
+4. `node prisma/seed.mjs` — idempotent demo data (skip with `SEED_ON_START=0`).
+5. `next start` — listens on `0.0.0.0:3000`.
 
 **Build vs runtime env:** `next build` needs placeholder env vars (no real DB
 yet). The Dockerfile sets them in the builder stage; `src/lib/env.ts` also
@@ -171,6 +173,8 @@ settings via `.env.docker` or shell exports.
 | `CLERK_SECRET_KEY`                  | placeholder             | Clerk server key. Replace for real use.        |
 | `LOG_LEVEL`                         | `info`                  | `debug` \| `info` \| `warn` \| `error`.        |
 | `SEED_ON_START`                     | `1`                     | Set to `0` to keep persistent data on restart. |
+| `RATE_LIMIT_WINDOW_MS`              | `60000`                 | Mutation rate-limit window in milliseconds.    |
+| `RATE_LIMIT_MAX_REQUESTS`           | `20`                    | Max payment mutations per user/window.         |
 
 ### One-off Docker (no compose)
 
@@ -194,7 +198,7 @@ docker run --rm -p 3000:3000 \
 | `npm run lint`         | ESLint, zero warnings allowed                                   |
 | `npm run format`       | Prettier write                                                  |
 | `npm run format:check` | Prettier check only                                             |
-| `npm test`             | Reset `test.db`, `db push`, Vitest (40 tests)                   |
+| `npm test`             | Reset `test.db`, `db push`, Vitest (42 tests)                   |
 | `npm run test:watch`   | Vitest watch (`test.db` must exist — run `npm test` once first) |
 | `npm run db:generate`  | Regenerate Prisma Client                                        |
 | `npm run db:migrate`   | Apply migrations (`prisma migrate dev`)                         |
@@ -213,12 +217,12 @@ docker run --rm -p 3000:3000 \
 | `lib/result.test.ts`                                        | `ok` / `err` constructors and type narrowing of the `Result` union.                                                                                                                                     |
 | `lib/money.test.ts`                                         | Currency formatting across locales and currencies, edge cases at 0 / sub-dollar.                                                                                                                        |
 | `lib/enums.test.ts`                                         | `SeatStatus` / `PaymentStatus` type guards accept known values, reject everything else.                                                                                                                 |
-| `features/payments/__tests__/create-payment-intent.test.ts` | `seat_not_found`, `seat_unavailable`, active lock conflicts, same-user lock reuse, payment intent audit rows.                                                                                           |
+| `features/payments/__tests__/create-payment-intent.test.ts` | `seat_not_found`, `seat_unavailable`, active lock conflicts, client idempotency-key retries, expired checkout cleanup, payment intent audit rows.                                                       |
 | `features/payments/__tests__/complete-payment.test.ts`      | Gateway success/failure paths, payment audit rows, lock release, no reservation on failure, idempotent repeated events, ownership checks.                                                               |
 | `features/payments/__tests__/reservation-workflow.test.ts`  | End-to-end scenarios: success path reserves; failure leaves seat free; cross-user attack is rejected; second buyer is blocked by an active lock; repeated gateway events are idempotent.                |
 | `features/seats/__tests__/queries.test.ts`                  | Empty list; alphabetical order; everything AVAILABLE by default; reservation ownership; active lock display; anonymous viewers never see ownership; unknown stored status degrades safely to AVAILABLE. |
 
-Total: **40 tests across 7 files**.
+Total: **42 tests across 7 files**.
 
 The domain layer (Prisma client is injected, not imported) means the same
 functions used by Server Actions and the JSON API are the ones the tests
@@ -258,7 +262,7 @@ src/
 
 Core functions (parameterised by `PrismaClient`, return `Result<T, Code>`):
 
-- `features/payments/create-payment-intent.ts` — `PENDING` payment + expiring seat lock
+- `features/payments/create-payment-intent.ts` — client-idempotent `PENDING` payment + expiring seat lock
 - `features/payments/complete-payment.ts` — gateway event audit + transactional reserve/failure
 - `features/seats/queries.ts` — read seats with ownership flag for the viewer
 
@@ -269,8 +273,9 @@ sequenceDiagram
   participant UI as Server Action / API
   participant DB as Prisma + SQLite
 
-  U->>UI: Select seat → create payment
-  UI->>DB: INSERT payment + lock seat + audit event
+  U->>UI: Select seat → create payment (client idempotency key)
+  UI->>DB: Expire stale checkout locks
+  UI->>DB: Lock seat, then INSERT payment + audit event
   U->>UI: Mock gateway success/failure
   UI->>DB: BEGIN TRANSACTION
   UI->>DB: Verify gateway event + active lock
@@ -286,8 +291,10 @@ sequenceDiagram
 ```
 
 Race safety: a second buyer cannot create a pending checkout while a valid lock
-exists. Final reservation still uses a conditional `updateMany` on the lock so an
-expired or conflicting checkout cannot reserve the seat.
+exists. Stale locks are marked `FAILED` with "Checkout session expired" before
+new checkout attempts and when seats are listed. Final reservation still uses a
+conditional `updateMany` on the lock so an expired or conflicting checkout cannot
+reserve the seat.
 
 ## Mutations: Server Actions and API
 
@@ -298,22 +305,33 @@ expired or conflicting checkout cannot reserve the seat.
 | REST           | `POST /api/payments/:id/complete` | External / curl clients                              |
 | REST           | `GET /api/health`                 | Docker healthcheck / load balancer                   |
 
-Both action and API call the same domain functions. HTTP status mapping lives in
-`src/app/api/http.ts`:
+Both action and API call the same domain functions. The public payment API is
+protected by an in-memory fixed-window rate limiter keyed by authenticated user
+and route. HTTP status mapping lives in `src/app/api/http.ts`:
 
-| Domain code                                                        | HTTP |
-| ------------------------------------------------------------------ | ---: |
-| `unauthorized`                                                     |  401 |
-| `forbidden`                                                        |  403 |
-| `seat_not_found`, `payment_not_found`                              |  404 |
-| `invalid_input`                                                    |  422 |
-| `seat_unavailable`, `seat_locked`, `seat_conflict`, `lock_expired` |  409 |
+`POST /api/payments` requires a caller-generated `idempotencyKey` UUID along
+with `seatId`. If the client loses the response and retries with the same key,
+the API returns the same checkout instead of creating a duplicate payment.
+
+| Domain code                                                                                                        | HTTP |
+| ------------------------------------------------------------------------------------------------------------------ | ---: |
+| `unauthorized`                                                                                                     |  401 |
+| `forbidden`                                                                                                        |  403 |
+| `rate_limited`                                                                                                     |  429 |
+| `seat_not_found`, `payment_not_found`                                                                              |  404 |
+| `invalid_input`                                                                                                    |  422 |
+| `seat_unavailable`, `seat_locked`, `seat_conflict`, `duplicate_request`, `duplicate_gateway_event`, `lock_expired` |  409 |
 
 Unmapped codes default to **400** so missing mappings show up in review.
 
 ## Trade-offs (intentional)
 
 - **SQLite** — zero-config for reviewers; production would use Postgres.
+  The app enables WAL mode and a 5s busy timeout to reduce local write-lock
+  contention.
+- **Rate limiting** — in-memory fixed-window limits protect payment mutation
+  endpoints in the single-instance demo. Production would move this to Redis,
+  Upstash, or the edge/CDN.
 - **Clerk session length** — configure 90-day max lifetime in Clerk, not as a
   long-lived app JWT. Clerk continues to issue/refresh short-lived tokens.
 - **Mock payments** — buttons simulate gateway events; the domain layer already

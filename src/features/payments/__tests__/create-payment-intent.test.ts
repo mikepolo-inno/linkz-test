@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { PrismaClient } from "@prisma/client";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
@@ -35,6 +36,7 @@ describe("createPaymentIntent", () => {
       prisma,
       seatId: "does-not-exist",
       userId: user.id,
+      idempotencyKey: randomUUID(),
     });
 
     expect(result.ok).toBe(false);
@@ -53,6 +55,7 @@ describe("createPaymentIntent", () => {
       prisma,
       seatId: seat.id,
       userId: user.id,
+      idempotencyKey: randomUUID(),
     });
 
     expect(result.ok).toBe(false);
@@ -69,6 +72,7 @@ describe("createPaymentIntent", () => {
       prisma,
       seatId: seat.id,
       userId: user.id,
+      idempotencyKey: randomUUID(),
     });
 
     expect(result.ok).toBe(true);
@@ -93,7 +97,12 @@ describe("createPaymentIntent", () => {
     const user = await createUser();
     const seat = await prisma.seat.create({ data: { label: "A1" } });
 
-    await createPaymentIntent({ prisma, seatId: seat.id, userId: user.id });
+    await createPaymentIntent({
+      prisma,
+      seatId: seat.id,
+      userId: user.id,
+      idempotencyKey: randomUUID(),
+    });
 
     const after = await prisma.seat.findUniqueOrThrow({ where: { id: seat.id } });
     expect(after.status).toBe(SeatStatus.AVAILABLE);
@@ -111,11 +120,13 @@ describe("createPaymentIntent", () => {
       prisma,
       seatId: seat.id,
       userId: first.id,
+      idempotencyKey: randomUUID(),
     });
     const b = await createPaymentIntent({
       prisma,
       seatId: seat.id,
       userId: second.id,
+      idempotencyKey: randomUUID(),
     });
 
     expect(a.ok).toBe(true);
@@ -137,15 +148,77 @@ describe("createPaymentIntent", () => {
       prisma,
       seatId: seat.id,
       userId: user.id,
+      idempotencyKey: randomUUID(),
     });
     const second = await createPaymentIntent({
       prisma,
       seatId: seat.id,
       userId: user.id,
+      idempotencyKey: randomUUID(),
     });
 
     if (!first.ok || !second.ok) throw new Error("both should succeed");
 
     expect(second.value.paymentId).toBe(first.value.paymentId);
+  });
+
+  it("uses a client-provided idempotency key to recover the same checkout", async () => {
+    const user = await createUser();
+    const seat = await prisma.seat.create({ data: { label: "A1" } });
+    const idempotencyKey = randomUUID();
+
+    const first = await createPaymentIntent({
+      prisma,
+      seatId: seat.id,
+      userId: user.id,
+      idempotencyKey,
+    });
+    const retry = await createPaymentIntent({
+      prisma,
+      seatId: seat.id,
+      userId: user.id,
+      idempotencyKey,
+    });
+
+    if (!first.ok || !retry.ok) throw new Error("retry should succeed");
+    expect(retry.value.paymentId).toBe(first.value.paymentId);
+    await expect(prisma.payment.count()).resolves.toBe(1);
+  });
+
+  it("expires abandoned pending checkouts before creating a new lock", async () => {
+    const first = await createUser("first@example.com");
+    const second = await createUser("second@example.com");
+    const seat = await prisma.seat.create({ data: { label: "A1" } });
+    const firstIntent = await createPaymentIntent({
+      prisma,
+      seatId: seat.id,
+      userId: first.id,
+      idempotencyKey: randomUUID(),
+    });
+    if (!firstIntent.ok) throw new Error("first intent should succeed");
+
+    const expiredAt = new Date(Date.now() - 60_000);
+    await prisma.seat.update({
+      where: { id: seat.id },
+      data: { lockExpiresAt: expiredAt },
+    });
+    await prisma.seatLock.update({
+      where: { paymentId: firstIntent.value.paymentId },
+      data: { expiresAt: expiredAt },
+    });
+
+    const secondIntent = await createPaymentIntent({
+      prisma,
+      seatId: seat.id,
+      userId: second.id,
+      idempotencyKey: randomUUID(),
+    });
+
+    expect(secondIntent.ok).toBe(true);
+    const expiredPayment = await prisma.payment.findUniqueOrThrow({
+      where: { id: firstIntent.value.paymentId },
+    });
+    expect(expiredPayment.status).toBe(PaymentStatus.FAILED);
+    expect(expiredPayment.failureReason).toMatch(/checkout session expired/i);
   });
 });

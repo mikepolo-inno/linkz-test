@@ -14,14 +14,20 @@ export async function getSession(): Promise<AppSession | null> {
   const { userId: clerkUserId } = await auth();
   if (!clerkUserId) return null;
 
+  const existingUser = await prisma.user.findUnique({
+    where: { clerkUserId },
+    select: { id: true, email: true, name: true },
+  });
+  if (existingUser) {
+    return { user: existingUser };
+  }
+
   const clerkUser = await currentUser();
   const email = clerkUser?.primaryEmailAddress?.emailAddress ?? null;
   const name = clerkUser?.fullName ?? clerkUser?.username ?? null;
 
-  const user = await prisma.user.upsert({
-    where: { clerkUserId },
-    update: { email, name },
-    create: { clerkUserId, email, name },
+  const user = await prisma.user.create({
+    data: { clerkUserId, email, name },
     select: { id: true, email: true, name: true },
   });
 

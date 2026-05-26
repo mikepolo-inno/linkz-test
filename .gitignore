@@ -9,3 +9,4 @@ prisma/dev.db-journal
 .idea
 prisma/test.db
 prisma/test.db-journal
+*.sqlite

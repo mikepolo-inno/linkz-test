@@ -11,11 +11,7 @@ export function LoginForm() {
 
   return (
     <Card className="flex justify-center">
-      <SignIn
-        routing="path"
-        path="/login"
-        fallbackRedirectUrl={callbackUrl}
-      />
+      <SignIn routing="path" path="/login" fallbackRedirectUrl={callbackUrl} />
     </Card>
   );
 }

@@ -55,7 +55,10 @@ export function SeatMap({ isAuthenticated, seats }: SeatMapProps) {
     }
 
     startTransition(async () => {
-      const result = await createPaymentAction({ seatId: selectedSeat.id });
+      const result = await createPaymentAction({
+        seatId: selectedSeat.id,
+        idempotencyKey: crypto.randomUUID(),
+      });
 
       if (!result.ok) {
         toast.error("Could not start payment", { description: result.message });

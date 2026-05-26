@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { prisma } from "@/lib/db";
+import { ensureSqlitePragmas, prisma } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +13,7 @@ export const dynamic = "force-dynamic";
  */
 export async function GET() {
   try {
+    await ensureSqlitePragmas();
     await prisma.$queryRaw`SELECT 1`;
     return NextResponse.json({ status: "ok" });
   } catch (error) {

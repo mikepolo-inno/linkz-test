@@ -13,6 +13,17 @@ echo "==> Database: ${DATABASE_URL}"
 echo "==> Applying migrations"
 node_modules/.bin/prisma migrate deploy --schema=./prisma/schema.prisma
 
+echo "==> Enabling SQLite WAL pragmas"
+node --input-type=module <<'EOF'
+import { PrismaClient } from "@prisma/client";
+
+const prisma = new PrismaClient();
+await prisma.$queryRawUnsafe("PRAGMA journal_mode = WAL");
+await prisma.$queryRawUnsafe("PRAGMA busy_timeout = 5000");
+await prisma.$queryRawUnsafe("PRAGMA foreign_keys = ON");
+await prisma.$disconnect();
+EOF
+
 if [ "${SEED_ON_START:-1}" = "1" ]; then
   echo "==> Seeding demo data"
   node ./prisma/seed.mjs

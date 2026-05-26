@@ -1,14 +1,19 @@
-import { randomUUID } from "crypto";
 import type { PrismaClient } from "@prisma/client";
 
 import { PaymentStatus, SeatStatus } from "@/lib/enums";
+import { ensureSqlitePragmas } from "@/lib/db";
 import { err, ok, type Result } from "@/lib/result";
 
 import { PAYMENT_AMOUNT_CENTS, PAYMENT_CURRENCY } from "./config";
+import { expirePendingCheckouts } from "./checkout-expiry";
 
 const SEAT_LOCK_TTL_MS = 10 * 60 * 1000;
 
-export type CreatePaymentError = "seat_not_found" | "seat_unavailable" | "seat_locked";
+export type CreatePaymentError =
+  | "seat_not_found"
+  | "seat_unavailable"
+  | "seat_locked"
+  | "duplicate_request";
 export type CreatePaymentResult = Result<
   { paymentId: string; lockExpiresAt: Date },
   CreatePaymentError
@@ -18,6 +23,7 @@ type CreatePaymentArgs = {
   prisma: PrismaClient;
   seatId: string;
   userId: string;
+  idempotencyKey: string;
 };
 
 /**
@@ -29,49 +35,67 @@ export async function createPaymentIntent({
   prisma,
   seatId,
   userId,
+  idempotencyKey,
 }: CreatePaymentArgs): Promise<CreatePaymentResult> {
   const now = new Date();
   const lockExpiresAt = new Date(now.getTime() + SEAT_LOCK_TTL_MS);
 
-  const seat = await prisma.seat.findUnique({
-    where: { id: seatId },
-    select: {
-      id: true,
-      status: true,
-      lockedByUserId: true,
-      lockExpiresAt: true,
-      lockPaymentId: true,
-    },
-  });
-
-  if (!seat) {
-    return err("seat_not_found", "Seat was not found.");
-  }
-
-  if (seat.status !== SeatStatus.AVAILABLE) {
-    return err("seat_unavailable", "This seat has already been reserved.");
-  }
-
-  if (
-    seat.lockedByUserId === userId &&
-    seat.lockExpiresAt &&
-    seat.lockExpiresAt > now &&
-    seat.lockPaymentId
-  ) {
-    return ok({ paymentId: seat.lockPaymentId, lockExpiresAt: seat.lockExpiresAt });
-  }
+  await ensureSqlitePragmas(prisma);
 
   return prisma.$transaction(async (tx) => {
-    const payment = await tx.payment.create({
-      data: {
-        userId,
-        seatId,
-        amountCents: PAYMENT_AMOUNT_CENTS,
-        currency: PAYMENT_CURRENCY,
-        idempotencyKey: randomUUID(),
-      },
-      select: { id: true },
+    await expirePendingCheckouts(tx, now, seatId);
+
+    const existingPayment = await tx.payment.findUnique({
+      where: { idempotencyKey },
+      include: { lock: true },
     });
+
+    if (existingPayment) {
+      if (existingPayment.userId !== userId || existingPayment.seatId !== seatId) {
+        return err(
+          "duplicate_request",
+          "This idempotency key was already used for another checkout.",
+        );
+      }
+
+      const existingLockExpiresAt = existingPayment.lock?.expiresAt ?? lockExpiresAt;
+      return ok({
+        paymentId: existingPayment.id,
+        lockExpiresAt: existingLockExpiresAt,
+      });
+    }
+
+    const seat = await tx.seat.findUnique({
+      where: { id: seatId },
+      select: {
+        id: true,
+        status: true,
+        lockedByUserId: true,
+        lockExpiresAt: true,
+        lockPaymentId: true,
+      },
+    });
+
+    if (!seat) {
+      return err("seat_not_found", "Seat was not found.");
+    }
+
+    if (seat.status !== SeatStatus.AVAILABLE) {
+      return err("seat_unavailable", "This seat has already been reserved.");
+    }
+
+    if (
+      seat.lockedByUserId === userId &&
+      seat.lockExpiresAt &&
+      seat.lockExpiresAt > now &&
+      seat.lockPaymentId
+    ) {
+      return ok({ paymentId: seat.lockPaymentId, lockExpiresAt: seat.lockExpiresAt });
+    }
+
+    if (seat.lockedByUserId && seat.lockExpiresAt && seat.lockExpiresAt > now) {
+      return err("seat_locked", "This seat is temporarily held by another guest.");
+    }
 
     const lock = await tx.seat.updateMany({
       where: {
@@ -86,30 +110,28 @@ export async function createPaymentIntent({
       data: {
         lockedByUserId: userId,
         lockExpiresAt,
-        lockPaymentId: payment.id,
       },
     });
 
     if (lock.count === 0) {
-      await tx.payment.update({
-        where: { id: payment.id },
-        data: {
-          status: PaymentStatus.FAILED,
-          failureReason: "Seat is temporarily held by another checkout.",
-          completedAt: now,
-        },
-      });
-      await tx.paymentEvent.create({
-        data: {
-          paymentId: payment.id,
-          type: "SEAT_LOCK_REJECTED",
-          status: PaymentStatus.FAILED,
-          source: "app",
-          message: "Seat is temporarily held by another checkout.",
-        },
-      });
       return err("seat_locked", "This seat is temporarily held by another guest.");
     }
+
+    const payment = await tx.payment.create({
+      data: {
+        userId,
+        seatId,
+        amountCents: PAYMENT_AMOUNT_CENTS,
+        currency: PAYMENT_CURRENCY,
+        idempotencyKey,
+      },
+      select: { id: true },
+    });
+
+    await tx.seat.update({
+      where: { id: seatId },
+      data: { lockPaymentId: payment.id },
+    });
 
     await tx.seatLock.create({
       data: {

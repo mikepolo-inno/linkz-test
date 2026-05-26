@@ -13,6 +13,8 @@ const serverEnvSchema = z.object({
   CLERK_SECRET_KEY: z.string().min(1).optional(),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).optional(),
+  RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
+  RATE_LIMIT_MAX_REQUESTS: z.coerce.number().int().positive().default(20),
 });
 
 type ServerEnv = z.infer<typeof serverEnvSchema>;

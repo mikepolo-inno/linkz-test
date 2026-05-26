@@ -39,6 +39,7 @@ export async function createPaymentAction(
     prisma,
     seatId: parsed.data.seatId,
     userId,
+    idempotencyKey: parsed.data.idempotencyKey,
   });
 
   if (!result.ok) {

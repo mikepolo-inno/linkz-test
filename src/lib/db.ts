@@ -21,3 +21,17 @@ export const prisma =
 if (env.NODE_ENV !== "production") {
   globalThis.__prisma = prisma;
 }
+
+let sqlitePragmasReady: Promise<void> | null = null;
+
+export function ensureSqlitePragmas(client: PrismaClient = prisma): Promise<void> {
+  sqlitePragmasReady ??= client
+    .$queryRawUnsafe("PRAGMA journal_mode = WAL")
+    .then(async () => {
+      await client.$queryRawUnsafe("PRAGMA busy_timeout = 5000");
+      await client.$queryRawUnsafe("PRAGMA foreign_keys = ON");
+    })
+    .then(() => undefined);
+
+  return sqlitePragmasReady;
+}

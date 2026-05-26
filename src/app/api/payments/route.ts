@@ -5,6 +5,7 @@ import { getUserId } from "@/features/auth/session";
 import { createPaymentIntent } from "@/features/payments/create-payment-intent";
 import { createPaymentSchema } from "@/features/payments/schemas";
 import { prisma } from "@/lib/db";
+import { enforceRateLimit } from "@/lib/rate-limit";
 import { err } from "@/lib/result";
 
 export async function POST(request: Request) {
@@ -12,6 +13,9 @@ export async function POST(request: Request) {
   if (!userId) {
     return errToResponse(err("unauthorized", "Authentication required."));
   }
+
+  const rateLimit = enforceRateLimit(request, "create_payment", userId);
+  if (!rateLimit.ok) return rateLimit.response;
 
   const json = await request.json().catch(() => null);
   const parsed = createPaymentSchema.safeParse(json);
@@ -23,6 +27,7 @@ export async function POST(request: Request) {
     prisma,
     seatId: parsed.data.seatId,
     userId,
+    idempotencyKey: parsed.data.idempotencyKey,
   });
 
   if (!result.ok) return errToResponse(result);

@@ -9,6 +9,10 @@ const prisma = new PrismaClient();
 const DEMO_SEATS = ["A1", "A2", "A3"];
 
 async function main() {
+  await prisma.$queryRawUnsafe("PRAGMA journal_mode = WAL");
+  await prisma.$queryRawUnsafe("PRAGMA busy_timeout = 5000");
+  await prisma.$queryRawUnsafe("PRAGMA foreign_keys = ON");
+
   await prisma.paymentEvent.deleteMany();
   await prisma.seatLock.deleteMany();
   await prisma.reservation.deleteMany();

@@ -11,7 +11,10 @@ const HTTP_STATUS_BY_CODE: Record<string, number> = {
   seat_unavailable: 409,
   seat_locked: 409,
   seat_conflict: 409,
+  duplicate_request: 409,
+  duplicate_gateway_event: 409,
   lock_expired: 409,
+  rate_limited: 429,
 };
 
 /**
